@@ -13,7 +13,8 @@ print(a);
 a = a + 2;
 print(a);
 let f = fn(x) {
-	return x + 2;
+	let y = x;
+	return y + 2;
 };
 print(f(a));
 `

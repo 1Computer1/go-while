@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"while/lexer"
 	. "while/parser/ast"
-	"while/util"
 )
 
 type (
@@ -252,11 +251,11 @@ func (scope *Scope) EvalExpr(expr *lexer.L[Expr]) (Val, error) {
 					e.Args.Loc.End.Col,
 				))
 			}
-			vars := util.CopyMap(fv.Closure.Vars)
+			vars := make(map[string]Val)
 			for i, v := range vs {
 				vars[fv.Body.Args.Item[i].Item] = v
 			}
-			fscope := Scope{Vars: vars, Parent: fv.Closure.Parent}
+			fscope := Scope{Vars: vars, Parent: fv.Closure}
 			ctrl, val, err := fscope.evalStmts(fv.Body.Body.Item)
 			if err != nil {
 				return nil, err
