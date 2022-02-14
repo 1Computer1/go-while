@@ -14,7 +14,7 @@ const (
 
 type (
 	Program struct {
-		Body L[[]L[Stmt]]
+		Body []L[Stmt]
 	}
 
 	Stmt interface {
@@ -29,6 +29,11 @@ type (
 	// StmtLet let <name> = <body>;
 	StmtLet struct {
 		Name L[string]
+		Body L[Expr]
+	}
+
+	// StmtReturn return <body>;
+	StmtReturn struct {
 		Body L[Expr]
 	}
 
@@ -66,8 +71,9 @@ type (
 	}
 )
 
-func (*StmtExpr) stmt() {}
-func (*StmtLet) stmt()  {}
+func (*StmtExpr) stmt()   {}
+func (*StmtLet) stmt()    {}
+func (*StmtReturn) stmt() {}
 
 func (*ExprInt) expr()    {}
 func (*ExprVar) expr()    {}

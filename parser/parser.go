@@ -10,12 +10,16 @@ import (
 	"while/util"
 )
 
-// TODO: Parse ExprFn, check that ExprCall actually works
-// TODO: Parse statements and Program
-
 type Parser struct {
 	State State
 	Index int
+}
+
+func New(state lexer.State) Parser {
+	return Parser{
+		State: state,
+		Index: 0,
+	}
 }
 
 func (p *Parser) matchToken(kind TokKind) (*L[Tok], error) {
@@ -26,11 +30,138 @@ func (p *Parser) matchToken(kind TokKind) (*L[Tok], error) {
 		return &t, nil
 	}
 	// TODO: Map token kind to readable string
-	return nil, errors.New(fmt.Sprintf("Unexpected token at %d:%d", p.State.Pos.Col, p.State.Pos.Line))
+	return nil, errors.New(fmt.Sprintf("Unexpected token at %d:%d", p.State.Pos.Line, p.State.Pos.Col))
 }
 
-func (p *Parser) ParseExpr() (*L[Expr], error) {
-	return p.parseBinaryAdd()
+func (p *Parser) matchKw(kw string) (*L[Tok], error) {
+	next, t := lexer.LexToken(p.State)
+	if t.Item.Kind == TokKw && t.Item.Value == kw {
+		p.State = next
+		p.Index++
+		return &t, nil
+	}
+	// TODO: Map token kind to readable string
+	return nil, errors.New(fmt.Sprintf("Unexpected token at %d:%d", p.State.Pos.Line, p.State.Pos.Col))
+}
+
+func (p *Parser) ParseProgram() (*Program, error) {
+	ss, err := p.parseStmts()
+	if err != nil {
+		return nil, err
+	}
+	_, err = p.matchToken(TokEof)
+	if err != nil {
+		return nil, err
+	}
+	return &Program{Body: ss}, nil
+}
+
+func (p *Parser) parseStmts() ([]L[Stmt], error) {
+	var ss []L[Stmt]
+	for {
+		s, err := p.parseStmt()
+		if err != nil {
+			break
+		}
+		ss = append(ss, *s)
+	}
+	return ss, nil
+}
+
+func (p *Parser) parseStmt() (*L[Stmt], error) {
+	s, err := p.parseStmtLet()
+	if err == nil {
+		return s, nil
+	}
+	s, err = p.parseStmtReturn()
+	if err == nil {
+		return s, nil
+	}
+	s, err = p.parseStmtExpr()
+	if err == nil {
+		return s, nil
+	}
+	return nil, err
+}
+
+func (p *Parser) parseStmtExpr() (*L[Stmt], error) {
+	expr, err := p.parseExpr()
+	if err != nil {
+		return nil, err
+	}
+	semi, err := p.matchToken(TokSemi)
+	if err != nil {
+		return nil, err
+	}
+	ret := L[Stmt]{
+		Item: &StmtExpr{Body: *expr},
+		Loc:  lexer.Combine(expr, semi),
+	}
+	return &ret, nil
+}
+
+func (p *Parser) parseStmtLet() (*L[Stmt], error) {
+	lettok, err := p.matchKw("let")
+	if err != nil {
+		return nil, err
+	}
+	name, err := p.parseIdent()
+	if err != nil {
+		return nil, err
+	}
+	_, err = p.matchToken(TokEquals)
+	if err != nil {
+		return nil, err
+	}
+	expr, err := p.parseExpr()
+	if err != nil {
+		return nil, err
+	}
+	semi, err := p.matchToken(TokSemi)
+	if err != nil {
+		return nil, err
+	}
+	ret := L[Stmt]{
+		Item: &StmtLet{Name: *name, Body: *expr},
+		Loc:  lexer.Combine(lettok, semi),
+	}
+	return &ret, nil
+}
+
+func (p *Parser) parseStmtReturn() (*L[Stmt], error) {
+	lettok, err := p.matchKw("return")
+	if err != nil {
+		return nil, err
+	}
+	expr, err := p.parseExpr()
+	if err != nil {
+		return nil, err
+	}
+	semi, err := p.matchToken(TokSemi)
+	if err != nil {
+		return nil, err
+	}
+	ret := L[Stmt]{
+		Item: &StmtReturn{Body: *expr},
+		Loc:  lexer.Combine(lettok, semi),
+	}
+	return &ret, nil
+}
+
+func (p *Parser) ParseFullExpr() (*L[Expr], error) {
+	expr, err := p.parseExpr()
+	if err != nil {
+		return nil, err
+	}
+	_, err = p.matchToken(TokEof)
+	if err != nil {
+		return nil, err
+	}
+	return expr, nil
+}
+
+func (p *Parser) parseExpr() (*L[Expr], error) {
+	return p.parseBinaryAssign()
 }
 
 func (p *Parser) parseInt() (*L[Expr], error) {
@@ -56,6 +187,12 @@ func (p *Parser) parseVar() (*L[Expr], error) {
 		Name: *id,
 	}))
 	return &ret, nil
+}
+
+func (p *Parser) parseBinaryAssign() (*L[Expr], error) {
+	return p.parseBinaryGeneric(map[Op]TokKind{
+		OpAssign: TokEquals,
+	}, (*Parser).parseBinaryAdd)
 }
 
 func (p *Parser) parseBinaryAdd() (*L[Expr], error) {
@@ -111,8 +248,8 @@ func (p *Parser) parseBinaryGeneric(table map[Op]TokKind, lower func(*Parser) (*
 
 func (p *Parser) parseCall() (*L[Expr], error) {
 	e, err := p.parseAtom()
-	if err == nil {
-		return e, nil
+	if err != nil {
+		return nil, err
 	}
 	var calls []L[[]L[Expr]]
 	for {
@@ -121,7 +258,7 @@ func (p *Parser) parseCall() (*L[Expr], error) {
 			break
 		}
 		var args []L[Expr]
-		expr1, err := p.ParseExpr()
+		expr1, err := p.parseExpr()
 		if err == nil {
 			args = append(args, *expr1)
 			for {
@@ -129,7 +266,7 @@ func (p *Parser) parseCall() (*L[Expr], error) {
 				if err != nil {
 					break
 				}
-				expr, err := p.ParseExpr()
+				expr, err := p.parseExpr()
 				if err != nil {
 					return nil, err
 				}
@@ -154,7 +291,11 @@ func (p *Parser) parseCall() (*L[Expr], error) {
 }
 
 func (p *Parser) parseAtom() (*L[Expr], error) {
-	e, err := p.parseInt()
+	e, err := p.parseFn()
+	if err == nil {
+		return e, nil
+	}
+	e, err = p.parseInt()
 	if err == nil {
 		return e, nil
 	}
@@ -163,6 +304,64 @@ func (p *Parser) parseAtom() (*L[Expr], error) {
 		return e, nil
 	}
 	return nil, err
+}
+
+func (p *Parser) parseFn() (*L[Expr], error) {
+	fntok, err := p.matchKw("fn")
+	if err != nil {
+		return nil, err
+	}
+	lp, err := p.matchToken(TokLParen)
+	if err != nil {
+		return nil, err
+	}
+	var args []L[string]
+	arg1, err := p.parseIdent()
+	if err == nil {
+		args = append(args, *arg1)
+		for {
+			_, err := p.matchToken(TokComma)
+			if err != nil {
+				break
+			}
+			arg, err := p.parseIdent()
+			if err != nil {
+				return nil, err
+			}
+			args = append(args, *arg)
+		}
+		p.matchToken(TokComma)
+	}
+	rp, err := p.matchToken(TokRParen)
+	if err != nil {
+		return nil, err
+	}
+	lb, err := p.matchToken(TokLBrace)
+	if err != nil {
+		return nil, err
+	}
+	ss, err := p.parseStmts()
+	if err != nil {
+		return nil, err
+	}
+	rb, err := p.matchToken(TokRBrace)
+	if err != nil {
+		return nil, err
+	}
+	ret := L[Expr]{
+		Item: &ExprFn{
+			Args: L[[]L[string]]{
+				Item: args,
+				Loc:  lexer.Combine(lp, rp),
+			},
+			Body: L[[]L[Stmt]]{
+				Item: ss,
+				Loc:  lexer.Combine(lb, rb),
+			},
+		},
+		Loc: lexer.Combine(fntok, rp),
+	}
+	return &ret, nil
 }
 
 func (p *Parser) parseIdent() (*L[string], error) {

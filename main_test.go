@@ -5,18 +5,31 @@ import (
 	"while/eval"
 	"while/lexer"
 	"while/parser"
-
-	"github.com/gdexlab/go-render/render"
 )
 
+const source = `
+let a = 2 + 1 * 2;
+print(a);
+a = a + 2;
+print(a);
+let f = fn(x) {
+	return x + 2;
+};
+print(f(a));
+`
+
 func TestMain(t *testing.T) {
-	state := lexer.InitState("1 + 4 + 3", "test")
-	parser := parser.Parser{State: state, Index: 0}
-	expr, err := parser.ParseExpr()
+	state := lexer.InitState(source, "test")
+	parser := parser.New(state)
+	prog, err := parser.ParseProgram()
 	if err != nil {
+		t.Error(err)
 		return
 	}
-	env := eval.Env{Scope: map[string]eval.Val{}, Parent: nil}
-	val, err := env.EvalExpr(expr)
-	println(render.AsCode(val))
+	env := eval.TopLevel()
+	err = env.EvalProgram(prog)
+	if err != nil {
+		t.Error(err)
+		return
+	}
 }

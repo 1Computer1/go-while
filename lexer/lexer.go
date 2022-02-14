@@ -88,7 +88,7 @@ func LexToken(st State) (State, L[Tok]) {
 		}
 		var kind TokKind
 		switch string(state.Source[start.Index:state.Pos.Index]) {
-		case "fn", "return":
+		case "fn", "return", "let":
 			kind = TokKw
 			break
 		default:
